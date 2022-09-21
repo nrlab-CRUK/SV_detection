@@ -120,8 +120,8 @@ flanking_sequences <- flanking_sequences %>%
   mutate(JunctionSequenceReverseComplement = reverse_complement(JunctionSequence))
 
 query_sequences <- bind_rows(
-  flanking_sequences %>% transmute(ID, Direction = "Forward",  LeftFlankingSequence, RightFlankingSequence, LeftQuerySequence = LeftFlankingSequence, RightQuerySequence = RightFlankingSequence, JunctionSequence),
-  flanking_sequences %>% transmute(ID, Direction = "Reverse",  LeftFlankingSequence, RightFlankingSequence, LeftQuerySequence = RightFlankingSequenceReverseComplement, RightQuerySequence = LeftFlankingSequenceReverseComplement, JunctionSequence = JunctionSequenceReverseComplement)
+  transmute(flanking_sequences, ID, Direction = "Forward",  LeftFlankingSequence, RightFlankingSequence, LeftQuerySequence = LeftFlankingSequence, RightQuerySequence = RightFlankingSequence, JunctionSequence),
+  transmute(flanking_sequences, ID, Direction = "Reverse",  LeftFlankingSequence, RightFlankingSequence, LeftQuerySequence = RightFlankingSequenceReverseComplement, RightQuerySequence = LeftFlankingSequenceReverseComplement, JunctionSequence = JunctionSequenceReverseComplement)
 ) %>%
   arrange(ID, Direction) %>%
   mutate(QueryID = str_c(ID, "_", Direction)) %>%
@@ -145,23 +145,14 @@ repeat {
 
   indexes <- seq(1, length(fastq_lines), 4)
 
-  sequences <- tibble(ID = fastq_lines[indexes], Sequence = fastq_lines[indexes + 1])
+  sequences <- tibble(SequenceID = fastq_lines[indexes], Sequence = fastq_lines[indexes + 1]) %>%
+    mutate(ID = row_number())
 
   # extract ID from ID lines
-  if (!all(str_detect(sequences$ID, "^@"))) stop("Unexpected format in FASTQ file: ID lines should begin with @")
+  if (!all(str_detect(sequences$SequenceID, "^@"))) stop("Unexpected format in FASTQ file: ID lines should begin with @")
   sequences <- sequences %>%
-    mutate(ID = str_remove(ID, "^@")) %>%
-    mutate(ID = str_remove(ID, "[ #].*"))
-
-  # check for uniqueness of the IDs (in this batch)
-  # note these must be unique to join the string matches to the sequences
-  duplicates <- sequences %>%
-    count(ID) %>%
-    filter(n > 1) %>%
-    pull(ID)
-  if (length(duplicates) > 0) {
-    stop("duplicate IDs found in ", fastq_file, ": '", str_c(duplicates, collapse = "', '"), "'")
-  }
+    mutate(SequenceID = str_remove(SequenceID, "^@")) %>%
+    mutate(SequenceID = str_remove(SequenceID, "[ #].*"))
 
   # trim UMI tag
   sequences <- sequences %>%
@@ -177,10 +168,10 @@ repeat {
   # join matches to left and right flanking sequences and compute distance to
   # the matching sequence for both
   matches <- matches %>%
-    select(SequenceID = id, QueryID = query_id, MatchingPosition = position, MatchingSequence = match) %>%
-    left_join(sequences, by = c("SequenceID" = "ID")) %>%
+    select(ID = id, QueryID = query_id, MatchingPosition = position, MatchingSequence = match) %>%
+    left_join(sequences, by = "ID") %>%
     select(SequenceID, UMI, Sequence, QueryID, MatchingPosition, MatchingSequence) %>%
-    left_join(query_sequences %>% select(SVID = ID, Direction, QueryID, LeftFlankingSequence, RightFlankingSequence, LeftQuerySequence, RightQuerySequence, JunctionSequence), by = "QueryID") %>%
+    left_join(select(query_sequences, SVID = ID, Direction, QueryID, LeftFlankingSequence, RightFlankingSequence, LeftQuerySequence, RightQuerySequence, JunctionSequence), by = "QueryID") %>%
     rowwise() %>%
     mutate(LeftDistance = as.vector(adist(LeftQuerySequence, MatchingSequence, partial = TRUE))) %>%
     mutate(RightDistance = as.vector(adist(RightQuerySequence, MatchingSequence, partial = TRUE))) %>%
