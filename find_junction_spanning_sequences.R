@@ -10,7 +10,7 @@ option_list <- list(
               help = "FASTQ file containing sequences to be searched for breakpoint junctions"),
 
   make_option(c("--flanking-sequences"), dest = "flanking_sequence_file", default = "flanking_sequences.csv",
-              help = "CSV file containing flanking sequences on either side of the breakpoint junction; this is expected to contain ID, LeftFlankingSequence and RightFlankingSequence columns (default: flanking_sequences.csv)"),
+              help = "CSV file containing flanking sequences on either side of the breakpoint junction; this is expected to contain ID, LeftFlankingSequence, RightFlankingSequence and JunctionSequence columns (default: flanking_sequences.csv)"),
 
   make_option(c("--output"), dest = "output_file", default = "junction_sequence_matches.txt",
               help = "Tab-delimited output file containing sequences that match breakpoint junctions (default: junction_sequence_matches.txt)"),
@@ -71,8 +71,49 @@ find_matches <- function(query_id, query_sequence, ids, sequences, max_distance 
 
 
 # read the flanking sequences file
-flanking_sequences <- read_csv(flanking_sequence_file, col_types = "cccc")
+flanking_sequences <- read_csv(
+  flanking_sequence_file,
+  col_types = cols(
+    ID = col_character(),
+    LeftFlankingSequence = col_character(),
+    RightFlankingSequence = col_character(),
+    .default = col_character()
+  )
+)
 
+# check the expected columns exist
+expected_columns <- c("ID", "LeftFlankingSequence", "RightFlankingSequence")
+missing_columns <- setdiff(expected_columns, colnames(flanking_sequences))
+if (length(missing_columns) > 0) {
+  stop("missing columns found in ", flanking_sequence_file, ": '", str_c(missing_columns, collapse = "', '"), "'")
+}
+
+# check there are no missing values for the expected columns
+if (nrow(filter(flanking_sequences, is.na(ID))) > 0) {
+  stop("missing IDs found in ", flanking_sequence_file)
+}
+if (nrow(filter(flanking_sequences, is.na(LeftFlankingSequence))) > 0 ||
+    nrow(filter(flanking_sequences, is.na(RightFlankingSequence))) > 0) {
+  stop("missing flanking sequences found in ", flanking_sequence_file)
+}
+
+# check for uniqueness of the ID column
+duplicates <- flanking_sequences %>%
+  count(ID) %>%
+  filter(n > 1) %>%
+  pull(ID)
+if (length(duplicates) > 0) {
+  stop("duplicate IDs found in ", flanking_sequence_file, ": '", str_c(duplicates, collapse = "', '"), "'")
+}
+
+# add optional JunctionSequence column if it doesn't exist
+if (!"JunctionSequence" %in% colnames(flanking_sequences)) {
+  flanking_sequences <- mutate(flanking_sequences, JunctionSequence = as.character(NA))
+}
+
+flanking_sequences <- select(flanking_sequences, ID, LeftFlankingSequence, RightFlankingSequence, JunctionSequence)
+
+# get reverse complement sequences
 flanking_sequences <- flanking_sequences %>%
   mutate(LeftFlankingSequenceReverseComplement = reverse_complement(LeftFlankingSequence)) %>%
   mutate(RightFlankingSequenceReverseComplement = reverse_complement(RightFlankingSequence)) %>%
@@ -112,6 +153,16 @@ repeat {
     mutate(ID = str_remove(ID, "^@")) %>%
     mutate(ID = str_remove(ID, "[ #].*"))
 
+  # check for uniqueness of the IDs (in this batch)
+  # note these must be unique to join the string matches to the sequences
+  duplicates <- sequences %>%
+    count(ID) %>%
+    filter(n > 1) %>%
+    pull(ID)
+  if (length(duplicates) > 0) {
+    stop("duplicate IDs found in ", fastq_file, ": '", str_c(duplicates, collapse = "', '"), "'")
+  }
+
   # trim UMI tag
   sequences <- sequences %>%
     mutate(UMI = str_sub(Sequence, 1, umi_length)) %>%
@@ -140,6 +191,7 @@ repeat {
   matches <- matches %>%
     filter(LeftDistance <= max_distance, RightDistance <= max_distance)
 
+  # assess match across junction sequence if available
   if (nrow(matches) == 0) {
     matches <- matches %>%
       mutate(JunctionPosition = NA, JunctionMatchingSequence = NA, JunctionDistance = NA, JunctionOverlap = NA)
@@ -173,8 +225,3 @@ repeat {
 }
 
 close(fastq)
-
-
-sessionInfo()
-
-
