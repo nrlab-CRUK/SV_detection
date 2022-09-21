@@ -65,8 +65,8 @@ find_matches <- function(query_id, query_sequence, ids, sequences, max_distance 
     sequence = sequences,
     position = unlist(matches)
   ) %>%
-    filter(position != -1) %>%
-    mutate(match = unlist(regmatches(sequences, matches)))
+    mutate(match = as.character(regmatches(sequences, matches))) %>%
+    filter(position != -1)
 }
 
 
