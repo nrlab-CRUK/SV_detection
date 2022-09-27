@@ -105,3 +105,141 @@ flanking-sequences | CSV file containing flanking sequences on either side of th
 output             | Tab-delimited output file containing sequences that match breakpoint junctions (default: junction_sequence_matches.txt)
 max-distance       | Maximum edit distance for matches to each of the flanking sequences (default: 2)
 umi-length         | Number of UMI bases at beginning of read to omit from search (default: 0)
+
+### Output
+
+The output file is a tab-delimited file (TSV) containing the columns described
+in the following table. Each row corresponds to a match for one of the FASTQ
+sequence records to one of the junctions specified in the flanking sequences CSV
+file.
+
+Column                   | Description
+-------------------------|---------------------------
+ID                       | The dataset identifier as specified using the `id` flag
+SequenceID               | The sequence name or ID from a FASTQ record that matches one of the SV junctions
+UMI                      | The UMI tag excluded from the search if specified by the `umi-length` flag
+Sequence                 | The sequence from the FASTQ record (excluding the trimmed UMI tag if present)
+SVID                     | The matching SV identifier (the ID from the flanking sequences CSV file)
+LeftFlankingSequence     | The left flanking sequence for the SV that the read sequence matches
+RightFlankingSequence    | The right flanking sequence for the SV that the sequence record matches
+Direction                | The direction of the match, either 'Forward' or 'Reverse'
+MatchingPosition         | The position of the matching segment within the sequence
+MatchingSequence         | The matching segment within the sequence that contains the left and right flanking sequences
+LeftDistance             | The edit distance for the matching left flanking sequence
+RightDistance            | The edit distance for the matching right flanking sequence
+JunctionPosition         | The position of the matching junction sequence or NA if there is no match or the junction sequence is not specified in the flanking sequences CSV file
+JunctionMatchingSequence | The portion of the sequence that matches that junction sequence if specified
+JunctionDistance         | The edit distance for the matching junction sequence
+JunctionOverlap          | The minimum overlap of the matching sequence with the junction sequence assuming that the mid-point of the junction sequence is the actual junction location
+
+
+## Running the `junction_detection.nf` workflow on WGS data using Nextflow
+
+The `junction_detection.nf` workflow can be used to run the
+`find_junction_spanning_sequences.R` script on very large sequencing datasets
+such as would be obtained from deep whole genome sequencing (WGS). Unlike
+amplicon sequencing in which most reads are expected to match a rearrangement
+junction since they result from PCR amplification of the genomic rearrangement,
+only a very small fraction of reads in a WGS dataset will match any of the
+expected SV junctions. These reads are likely to have split alignments when
+aligned to the reference genome with an aligner such as
+[bwa-mem](https://github.com/lh3/bwa).
+
+Split alignments are represented in
+the [BAM](https://en.wikipedia.org/wiki/Binary_Alignment_Map) files produced by
+the aligner as a primary alignment with soft-clipping of the part of the read
+that maps to the other side of the junction and a supplementary alignmnet for
+that other part. The workflow extracts all soft-clipped reads which have a
+configurable minimum number of bases that have been clipped. It then splits the
+resulting set of sequences into chunks so that the computational work of running
+the `find_junction_spanning_sequences.R` script can be distributed over multiple
+processors, e.g. it can be parallelized by running on a multi-core server or a
+high-performance compute cluster.
+
+### Prerequisites
+
+In addition to the R package dependencies described above, the junction
+detection pipeline requires Nextflow and a Java 11 runtime to be installed.
+Assuming that Java is already installed, installing Nextflow is very
+straightforward with the following command:
+
+```
+curl -s https://get.nextflow.io | bash 
+```
+
+This will create a file called `nextflow`. This is an executable file that is
+used to run Nextflow pipelines. The `nextflow` file can be moved to the home
+directory or a `bin` subdirectory or another directory that is added to the
+PATH.
+
+The pipeline also requires [`samtools`](http://www.htslib.org) which is used
+to extract soft-clipped reads from the input BAM files.
+
+### Inputs
+
+The input files for the workflow are BAM files resulting from aligning the
+sequence data against a reference genome with an aligner, such as bwa, capable
+of producing clipped alignments.
+
+In addition to the flanking sequences CSV file required by the
+`find_junction_spanning_sequences.R` script and described above, the workflow is
+configured using a configuration file, an example of which is provided in this
+repository (see [`nextflow.config`](nextflow.config)).
+
+Also required is a sample sheet CSV file, named `sample_sheet.csv` by default,
+that contains ID and BAM columns, where the ID is the dataset ID provided to the
+R script using the `id` flag (see the table listing the options given above) and
+the BAM column contains the name or path of the BAM file for that dataset.
+
+### Configuring the workflow
+
+Create a file called `junction_detection.config` in the run directory and make changes to
+parameter settings as required. An example is given below:
+
+```
+// junction_detection.config
+params {
+    sample_sheet       = "sample_sheet.csv"
+    flanking_sequences = "flanking_sequences.csv"
+    results_dir        = "results"
+    min_soft_clipped   = 20
+    chunk_size         = 100000
+    max_distance       = 2
+    umi_length         = 10
+    samtools           = "samtools"
+    rscript            = "Rscript"
+}
+```
+
+The parameters are essentially the same as those described above for the R
+script. In addition it is possible to specify the chunk size, i.e. the number of
+reads within each chunk to be processed as a separate job, and also paths to the
+`Rscript` and `samtools` executables used by the pipeline (note that by default
+those available on the PATH are used).
+
+Run the workflow as follows:
+
+```
+nextflow run nrlab-CRUK/SV_detection -config junction_detection.config
+```
+
+Nextflow will download the workflow from the GitHub repository automatically the
+first time it is run.
+
+The pipeline is configured with 3 different run profiles. The standard profile
+used by default will use up to 4 CPU cores and 8GB memory. Also available is a
+profile called `bigserver` that can use up to 40 CPU cores and 128GB memory;
+this can be selected using the `-profile` option.
+
+```
+nextflow run nrlab-CRUK/SV_detection -config junction_detection.config -profile bigserver
+```
+
+The third profile can be used for submitting jobs to a compute cluster with the
+SLURM scheduler. More details on configuring and specifying run profiles can be
+found in the [Nextflow documentation](https://www.nextflow.io/docs/latest/config.html).
+
+### Outputs
+
+The output files are a single TSV file for each dataset with the same columns as
+described above for the `find_junction_spanning_sequences.R` script.
