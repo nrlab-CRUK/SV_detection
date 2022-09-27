@@ -47,7 +47,7 @@ workflow {
 
     bam = sample_sheet
         .splitCsv(header: true)
-        .map { row -> tuple(row.id, file(row.bam, checkIfExists: true)) }
+        .map { row -> tuple(row.ID, file(row.BAM, checkIfExists: true)) }
 
     bam \
       | extract_soft_clipped_reads \
