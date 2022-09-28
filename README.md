@@ -13,8 +13,8 @@ _Comparison of multiplex PCR, hybrid capture and whole genome sequencing assays
 for sensitive detection of circulating tumour DNA in stage IA-IV breast cancer,_
 Santonja _et al._, EMBO Molecular Medicine (in revision)
 
-This was originally written to find SV-supporting reads from a multiplex PCR
-assay in which the PCR primer pairs are the flanking sequences for which the
+The script was originally written to find SV-supporting reads from a multiplex
+PCR assay in which the PCR primer pairs are the flanking sequences for which the
 fuzzy matching search is run. The script searches for the primer pairs for the
 specified SV junctions within all sequence reads in a FASTQ file, allowing for
 a specified number of mismatches in each primer sequence. It reports all matches
