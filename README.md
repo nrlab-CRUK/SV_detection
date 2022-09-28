@@ -9,7 +9,9 @@ structural variants in tumours from breast cancer patients, especially to
 monitor disease progression or recurrence over time by analyzing circulating
 tumour DNA from blood samples.
 
-TODO: reference and link to online paper to go here
+_Comparison of multiplex PCR, hybrid capture and whole genome sequencing assays
+for sensitive detection of circulating tumour DNA in stage IA-IV breast cancer,_
+Santonja _et al._, EMBO Molecular Medicine (in revision)
 
 This was originally written to find SV-supporting reads from a multiplex PCR
 assay in which the PCR primer pairs are the flanking sequences for which the
